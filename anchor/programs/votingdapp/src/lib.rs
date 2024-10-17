@@ -2,7 +2,7 @@
 
 use anchor_lang::prelude::*;
 
-declare_id!("AsjZ3kWAUSQRNt2pZVeJkywhZ6gpLpHZmJjduPmKZDZZ");
+declare_id!("GcD6bF1nA8CxeruTSrNvCVj4QzUXW2rXhBRQq6xe1BFQ");
 
 #[program]
 pub mod votingdapp {
@@ -38,17 +38,18 @@ pub mod votingdapp {
     }
 
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
-        let candidate = &mut ctx.accounts.candidate;
-        candidate.candidate_votes += 1;
-
-        msg!("Verify for candidate: {}", candidate.candidate_name);
-        msg!(
-            "Vote successful for candidate: {}",
-            candidate.candidate_votes
-        );
-
-        Ok(())
-    }
+      let candidate = &mut ctx.accounts.candidate;
+      candidate.candidate_votes += 1;
+  
+      msg!("Verify for candidate: {}", candidate.candidate_name);
+      msg!(
+          "Vote successful for candidate: {}",
+          candidate.candidate_votes
+      );
+  
+      Ok(())
+  }
+  
 }
 #[derive(Accounts)]
 #[instruction(candidate_name: String, poll_id: u64)]
