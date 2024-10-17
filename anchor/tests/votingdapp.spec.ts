@@ -1,76 +1,117 @@
-import * as anchor from '@coral-xyz/anchor'
-import {Program} from '@coral-xyz/anchor'
-import {Keypair} from '@solana/web3.js'
-import {Votingdapp} from '../target/types/votingdapp'
+import * as anchor from '@coral-xyz/anchor';
+import { Program } from '@coral-xyz/anchor';
+import { Keypair, PublicKey } from '@solana/web3.js';
+import { Votingdapp } from '../target/types/votingdapp';
+import { startAnchor } from 'solana-bankrun';
+import { BankrunProvider } from 'anchor-bankrun';
+
+
+
+const IDL = require('../target/idl/votingdapp.json');
+
+const votingDappAddress = new PublicKey('AsjZ3kWAUSQRNt2pZVeJkywhZ6gpLpHZmJjduPmKZDZZ');
 
 describe('votingdapp', () => {
-  // Configure the client to use the local cluster.
-  const provider = anchor.AnchorProvider.env()
-  anchor.setProvider(provider)
-  const payer = provider.wallet as anchor.Wallet
 
-  const program = anchor.workspace.Votingdapp as Program<Votingdapp>
+  let context;
+  let provider: BankrunProvider;
+  let votingDappProgram: Program<Votingdapp>;
 
-  const votingdappKeypair = Keypair.generate()
+  beforeAll(async () => {
+    context = await startAnchor('', [{ name: 'votingdapp', programId: votingDappAddress }], []);
+    provider = new BankrunProvider(context);
 
-  it('Initialize Votingdapp', async () => {
-    await program.methods
-      .initialize()
-      .accounts({
-        votingdapp: votingdappKeypair.publicKey,
-        payer: payer.publicKey,
-      })
-      .signers([votingdappKeypair])
-      .rpc()
-
-    const currentCount = await program.account.votingdapp.fetch(votingdappKeypair.publicKey)
-
-    expect(currentCount.count).toEqual(0)
+    votingDappProgram = new Program<Votingdapp>(IDL, provider);
   })
 
-  it('Increment Votingdapp', async () => {
-    await program.methods.increment().accounts({ votingdapp: votingdappKeypair.publicKey }).rpc()
+  it('Initialize Poll', async () => {
+    context = await startAnchor('', [{ name: 'votingdapp', programId: votingDappAddress }], []);
+    provider = new BankrunProvider(context);
 
-    const currentCount = await program.account.votingdapp.fetch(votingdappKeypair.publicKey)
+    votingDappProgram = new Program<Votingdapp>(IDL, provider);
 
-    expect(currentCount.count).toEqual(1)
-  })
+    await votingDappProgram.methods
+      .initializePoll(
+        new anchor.BN(1),
+        'Example Poll',
+        new anchor.BN(0),
+        new anchor.BN(1828986482)
+      )
+      .rpc();
 
-  it('Increment Votingdapp Again', async () => {
-    await program.methods.increment().accounts({ votingdapp: votingdappKeypair.publicKey }).rpc()
+    const [pollAddress] = PublicKey.findProgramAddressSync(
+      [new anchor.BN(1).toArrayLike(Buffer, 'le', 8)],
+      votingDappAddress
+    );
 
-    const currentCount = await program.account.votingdapp.fetch(votingdappKeypair.publicKey)
+    const poll = await votingDappProgram.account.poll.fetch(pollAddress);
+    // console.log('Poll: ', poll);
 
-    expect(currentCount.count).toEqual(2)
-  })
+    // Now expect
+    expect(poll.pollId.toNumber()).toEqual(1);
+    expect(poll.description).toEqual('Example Poll');
+    expect(poll.pollStart.toNumber()).toBeLessThan(poll.pollEnd.toNumber());
 
-  it('Decrement Votingdapp', async () => {
-    await program.methods.decrement().accounts({ votingdapp: votingdappKeypair.publicKey }).rpc()
 
-    const currentCount = await program.account.votingdapp.fetch(votingdappKeypair.publicKey)
+  });
+  it('Initialize Candidate', async () => {
+    await votingDappProgram.methods.initializeCandidate(
+      "Smooth",
+      new anchor.BN(1)
+    ).rpc();
 
-    expect(currentCount.count).toEqual(1)
-  })
+    await votingDappProgram.methods.initializeCandidate(
+      "Crunchy",
+      new anchor.BN(1)
+    ).rpc();
 
-  it('Set votingdapp value', async () => {
-    await program.methods.set(42).accounts({ votingdapp: votingdappKeypair.publicKey }).rpc()
+    const [crunchyAddress] = PublicKey.findProgramAddressSync(
+      [new anchor.BN(1).toArrayLike(Buffer, 'le', 8), Buffer.from("Crunchy")],
+      votingDappAddress
+    );
 
-    const currentCount = await program.account.votingdapp.fetch(votingdappKeypair.publicKey)
 
-    expect(currentCount.count).toEqual(42)
-  })
+    const crunchyCandidate = await votingDappProgram.account.candidate.fetch(crunchyAddress);
+    console.log(crunchyCandidate, "crunchy Candidate");
+    expect(crunchyCandidate.candidateVotes.toNumber()).toEqual(0);
+    // expect(crunchyCandidate.candidateName).toEqual("Crunchy");
 
-  it('Set close the votingdapp account', async () => {
-    await program.methods
-      .close()
-      .accounts({
-        payer: payer.publicKey,
-        votingdapp: votingdappKeypair.publicKey,
-      })
-      .rpc()
+    const [smoothAddress] = PublicKey.findProgramAddressSync(
+      [new anchor.BN(1).toArrayLike(Buffer, 'le', 8), Buffer.from("Smooth")],
+      votingDappAddress
+    );
 
-    // The account should no longer exist, returning null.
-    const userAccount = await program.account.votingdapp.fetchNullable(votingdappKeypair.publicKey)
-    expect(userAccount).toBeNull()
-  })
-})
+    const smoothCandidate = await votingDappProgram.account.candidate.fetch(smoothAddress);
+    console.log(smoothCandidate, "smooth Candidate");
+    expect(smoothCandidate.candidateVotes.toNumber()).toEqual(0);
+
+  });
+
+  it('Cast Vote', async () => {
+
+    await votingDappProgram.methods.vote(
+      "Crunchy",
+      new anchor.BN(1)
+    ).rpc()
+
+    const [crunchyAddress] = PublicKey.findProgramAddressSync(
+      [new anchor.BN(1).toArrayLike(Buffer, 'le', 8), Buffer.from("Crunchy")],
+      votingDappAddress
+    );
+
+
+    const crunchyCandidate = await votingDappProgram.account.candidate.fetch(crunchyAddress);
+    console.log(crunchyCandidate, "crunchy Candidate");
+    expect(crunchyCandidate.candidateVotes.toNumber()).toEqual(1);
+
+  });
+});
+
+
+// Wrote new keypair to / home / onahsunday /.config / solana / id.json
+// =======================================================================
+// pubkey: AUzVVaDCH2bcNgvWV3rwirtUYqksMcrKgoTATisSX3ZF
+// =======================================================================
+// Save this seed phrase and your BIP39 passphrase to recover your new keypair:
+// donor boss proud reward verb evil economy salon book music danger image
+// =======================================================================
